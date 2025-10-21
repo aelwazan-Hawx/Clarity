@@ -402,3 +402,366 @@ const FinanceTrackerApp = () => {
     return (
       <div className="pb-20 md:pb-6">
         <h2
+          <h2 className="text-2xl font-bold text-gray-800 mb-6">Budget Builder</h2>
+        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Currency</label>
+              <div className="flex gap-2">
+                <button onClick={() => setSelectedCurrency('SAR')} className={`flex-1 py-2 rounded-lg font-medium ${selectedCurrency === 'SAR' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'}`}>SAR</button>
+                <button onClick={() => setSelectedCurrency('EGP')} className={`flex-1 py-2 rounded-lg font-medium ${selectedCurrency === 'EGP' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}>EGP</button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Month</label>
+              <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
+            </div>
+          </div>
+        </div>
+        <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl shadow-lg p-6 text-white mb-6">
+          <div className="grid md:grid-cols-3 gap-4">
+            <div><p className="text-blue-100 text-sm mb-1">Total Budget</p><p className="text-3xl font-bold">{totalBudget.toLocaleString()}</p><p className="text-sm">{selectedCurrency}</p></div>
+            <div><p className="text-blue-100 text-sm mb-1">Total Spent</p><p className="text-3xl font-bold">{totalSpent.toLocaleString()}</p><p className="text-sm">{selectedCurrency}</p></div>
+            <div><p className="text-blue-100 text-sm mb-1">Remaining</p><p className={`text-3xl font-bold ${totalSpent > totalBudget ? 'text-red-200' : ''}`}>{(totalBudget - totalSpent).toLocaleString()}</p><p className="text-sm">{selectedCurrency}</p></div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl shadow-lg p-6">
+          <h3 className="text-xl font-bold text-gray-800 mb-4">Category Budgets</h3>
+          <div className="space-y-4">
+            {categories.map(category => {
+              const key = getBudgetKey(category, selectedCurrency, selectedMonth);
+              const budget = budgets[key] || 0;
+              const spent = calculateSpending(category, selectedCurrency, selectedMonth);
+              const remaining = budget - spent;
+              const percentage = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0;
+
+              return (
+                <div key={category} className="border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-gray-800">{category}</h4>
+                      <div className="flex items-center gap-4 mt-2">
+                        {editingBudget === category ? (
+                          <div className="flex items-center gap-2">
+                            <input type="number" step="0.01" value={budgetAmount} onChange={(e) => setBudgetAmount(e.target.value)} placeholder="Amount" className="w-32 px-3 py-1 border border-gray-300 rounded" autoFocus />
+                            <button onClick={() => handleSetBudget(category)} className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 text-sm">Save</button>
+                            <button onClick={() => { setEditingBudget(null); setBudgetAmount(''); }} className="bg-gray-300 text-gray-700 px-3 py-1 rounded hover:bg-gray-400 text-sm">Cancel</button>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="text-sm text-gray-600">Budget: <span className="font-semibold">{budget.toLocaleString()} {selectedCurrency}</span></span>
+                            <span className="text-sm text-gray-600">Spent: <span className="font-semibold">{spent.toLocaleString()} {selectedCurrency}</span></span>
+                            <span className={`text-sm font-semibold ${remaining < 0 ? 'text-red-600' : 'text-green-600'}`}>{remaining >= 0 ? 'Left' : 'Over'}: {Math.abs(remaining).toLocaleString()} {selectedCurrency}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    {editingBudget !== category && (
+                      <div className="flex gap-2">
+                        <button onClick={() => { setEditingBudget(category); setBudgetAmount(budget.toString()); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-4 h-4" /></button>
+                        {budget > 0 && <button onClick={() => handleDeleteBudget(category)} className="p-2 text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button>}
+                      </div>
+                    )}
+                  </div>
+                  {budget > 0 && (
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className={`text-sm font-medium ${getProgressTextColor(spent, budget)}`}>{percentage.toFixed(0)}% used</span>
+                        {percentage >= 80 && <span className="flex items-center gap-1 text-sm text-yellow-600"><AlertCircle className="w-4 h-4" />{percentage >= 100 ? 'Over budget!' : 'Near limit'}</span>}
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-3">
+                        <div className={`h-3 rounded-full transition-all ${getProgressColor(spent, budget)}`} style={{ width: `${percentage}%` }} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const ControlPanel = () => {
+    const [activeTab, setActiveTab] = useState('categories');
+    const [newItem, setNewItem] = useState('');
+    const [editingItem, setEditingItem] = useState(null);
+    const [selectedCurrency, setSelectedCurrency] = useState('SAR');
+
+    const ManageCategories = () => {
+      const [categoryType, setCategoryType] = useState('expense');
+      const categories = categoryType === 'income' ? incomeCategories : expenseCategories;
+      const setCategories = categoryType === 'income' ? setIncomeCategories : setExpenseCategories;
+
+      const handleAdd = () => {
+        if (!newItem.trim()) return;
+        if (categories.includes(newItem.trim())) { alert('Category already exists!'); return; }
+        setCategories([...categories, newItem.trim()]);
+        setNewItem('');
+      };
+
+      const handleEdit = (oldName, newName) => {
+        if (!newName.trim()) return;
+        setCategories(categories.map(c => c === oldName ? newName.trim() : c));
+        setTransactions(transactions.map(t => t.category === oldName ? {...t, category: newName.trim()} : t));
+        setEditingItem(null);
+      };
+
+      const handleDelete = (categoryName) => {
+        const used = transactions.some(t => t.category === categoryName);
+        if (used && !window.confirm(`"${categoryName}" is used in transactions. Delete anyway?`)) return;
+        setCategories(categories.filter(c => c !== categoryName));
+      };
+
+      return (
+        <div className="space-y-4">
+          <div className="flex gap-4 mb-6">
+            <button onClick={() => setCategoryType('expense')} className={`px-6 py-2 rounded-lg font-medium ${categoryType === 'expense' ? 'bg-red-600 text-white' : 'bg-gray-200 text-gray-700'}`}>Expense Categories</button>
+            <button onClick={() => setCategoryType('income')} className={`px-6 py-2 rounded-lg font-medium ${categoryType === 'income' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'}`}>Income Categories</button>
+          </div>
+          <div className="flex gap-2">
+            <input type="text" value={newItem} onChange={(e) => setNewItem(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAdd()} placeholder="Add new category..." className="flex-1 px-4 py-2 border border-gray-300 rounded-lg" />
+            <button onClick={handleAdd} className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">Add</button>
+          </div>
+          <div className="space-y-2">
+            {categories.map(cat => (
+              <div key={cat} className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                {editingItem === cat ? (
+                  <input type="text" defaultValue={cat} onBlur={(e) => handleEdit(cat, e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleEdit(cat, e.target.value)} autoFocus className="flex-1 px-3 py-1 border border-gray-300 rounded" />
+                ) : (
+                  <>
+                    <span className="flex-1 text-gray-800">{cat}</span>
+                    <button onClick={() => setEditingItem(cat)} className="p-2 text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-4 h-4" /></button>
+                    <button onClick={() => handleDelete(cat)} className="p-2 text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
+
+    const ManagePaymentMethods = () => {
+      const methods = selectedCurrency === 'SAR' ? sarPaymentMethods : egpPaymentMethods;
+      const setMethods = selectedCurrency === 'SAR' ? setSarPaymentMethods : setEgpPaymentMethods;
+
+      const handleAdd = () => {
+        if (!newItem.trim()) return;
+        if (methods.includes(newItem.trim())) { alert('Payment method already exists!'); return; }
+        setMethods([...methods, newItem.trim()]);
+        setNewItem('');
+      };
+
+      const handleEdit = (oldName, newName) => {
+        if (!newName.trim()) return;
+        setMethods(methods.map(m => m === oldName ? newName.trim() : m));
+        setTransactions(transactions.map(t => t.paymentMethod === oldName && t.currency === selectedCurrency ? {...t, paymentMethod: newName.trim()} : t));
+        setEditingItem(null);
+      };
+
+      const handleDelete = (methodName) => {
+        const used = transactions.some(t => t.paymentMethod === methodName && t.currency === selectedCurrency);
+        if (used && !window.confirm(`"${methodName}" is used in transactions. Delete anyway?`)) return;
+        setMethods(methods.filter(m => m !== methodName));
+      };
+
+      return (
+        <div className="space-y-4">
+          <div className="flex gap-4 mb-6">
+            <button onClick={() => setSelectedCurrency('SAR')} className={`px-6 py-2 rounded-lg font-medium ${selectedCurrency === 'SAR' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'}`}>SAR Methods</button>
+            <button onClick={() => setSelectedCurrency('EGP')} className={`px-6 py-2 rounded-lg font-medium ${selectedCurrency === 'EGP' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}>EGP Methods</button>
+          </div>
+          <div className="flex gap-2">
+            <input type="text" value={newItem} onChange={(e) => setNewItem(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAdd()} placeholder="Add new payment method..." className="flex-1 px-4 py-2 border border-gray-300 rounded-lg" />
+            <button onClick={handleAdd} className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">Add</button>
+          </div>
+          <div className="space-y-2">
+            {methods.map(method => (
+              <div key={method} className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                {editingItem === method ? (
+                  <input type="text" defaultValue={method} onBlur={(e) => handleEdit(method, e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleEdit(method, e.target.value)} autoFocus className="flex-1 px-3 py-1 border border-gray-300 rounded" />
+                ) : (
+                  <>
+                    <span className="flex-1 text-gray-800">{method}</span>
+                    <button onClick={() => setEditingItem(method)} className="p-2 text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-4 h-4" /></button>
+                    <button onClick={() => handleDelete(method)} className="p-2 text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
+
+    const ManageBalances = () => {
+      const [localBalances, setLocalBalances] = useState({});
+      
+      const calculateBalance = (paymentMethod, currency) => {
+        const opening = openingBalances[`${currency}-${paymentMethod}`] || 0;
+        const txns = transactions.filter(t => t.paymentMethod === paymentMethod && t.currency === currency);
+        const total = txns.reduce((sum, t) => t.type === 'income' ? sum + t.amount : sum - t.amount, opening);
+        return { opening, current: total };
+      };
+
+      const handleBalanceChange = (paymentMethod, currency, value) => {
+        setLocalBalances(prev => ({ ...prev, [`${currency}-${paymentMethod}`]: value }));
+      };
+
+      const handleBalanceBlur = (paymentMethod, currency, value) => {
+        setOpeningBalances(prev => ({ ...prev, [`${currency}-${paymentMethod}`]: value === '' ? 0 : parseFloat(value) || 0 }));
+      };
+
+      const getDisplayValue = (paymentMethod, currency) => {
+        const key = `${currency}-${paymentMethod}`;
+        return localBalances[key] !== undefined ? localBalances[key] : (openingBalances[key] || '');
+      };
+
+      return (
+        <div className="space-y-6">
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <p className="text-sm text-yellow-800">💡 <strong>Opening Balance:</strong> The starting amount you had in each account before using this app.</p>
+          </div>
+          <div className="flex gap-4 mb-6">
+            <button onClick={() => setSelectedCurrency('SAR')} className={`px-6 py-2 rounded-lg font-medium ${selectedCurrency === 'SAR' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'}`}>SAR Accounts</button>
+            <button onClick={() => setSelectedCurrency('EGP')} className={`px-6 py-2 rounded-lg font-medium ${selectedCurrency === 'EGP' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}>EGP Accounts</button>
+          </div>
+          <div className="space-y-3">
+            {(selectedCurrency === 'SAR' ? sarPaymentMethods : egpPaymentMethods).map(method => {
+              const balances = calculateBalance(method, selectedCurrency);
+              return (
+                <div key={method} className="bg-white border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-semibold text-gray-800">{method}</h4>
+                    <span className={`font-bold text-lg ${balances.current >= 0 ? 'text-green-600' : 'text-red-600'}`}>{balances.current.toLocaleString()} {selectedCurrency}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm text-gray-600">Opening Balance:</label>
+                    <input type="number" step="0.01" value={getDisplayValue(method, selectedCurrency)} onChange={(e) => handleBalanceChange(method, selectedCurrency, e.target.value)} onBlur={(e) => handleBalanceBlur(method, selectedCurrency, e.target.value)} className="w-32 px-3 py-1 border border-gray-300 rounded" placeholder="0.00" />
+                    <span className="text-sm text-gray-500">Current: {balances.current.toLocaleString()}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    };
+
+    const ExchangeRateSettings = () => {
+      const [tempRate, setTempRate] = useState(exchangeRate);
+
+      return (
+        <div className="space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p className="text-sm text-blue-800">💱 Set the exchange rate between SAR and EGP.</p>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-lg p-6">
+            <label className="block text-sm font-medium text-gray-700 mb-3">Exchange Rate: 1 SAR = ? EGP</label>
+            <div className="flex items-center gap-4">
+              <input type="number" step="0.01" value={tempRate} onChange={(e) => setTempRate(parseFloat(e.target.value))} className="w-32 px-4 py-2 border border-gray-300 rounded-lg" />
+              <span className="text-gray-600">EGP</span>
+              <button onClick={() => setExchangeRate(tempRate)} className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">Update Rate</button>
+            </div>
+            <p className="text-sm text-gray-500 mt-3">Current rate: 1 SAR = {exchangeRate} EGP</p>
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <div className="pb-20 md:pb-6">
+        <h2 className="text-2xl font-bold text-gray-800 mb-6">Control Panel</h2>
+        <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+          <div className="border-b border-gray-200">
+            <div className="flex overflow-x-auto">
+              <button onClick={() => setActiveTab('categories')} className={`px-6 py-4 font-medium whitespace-nowrap ${activeTab === 'categories' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50' : 'text-gray-600'}`}>Categories</button>
+              <button onClick={() => setActiveTab('payment')} className={`px-6 py-4 font-medium whitespace-nowrap ${activeTab === 'payment' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50' : 'text-gray-600'}`}>Payment Methods</button>
+              <button onClick={() => setActiveTab('balances')} className={`px-6 py-4 font-medium whitespace-nowrap ${activeTab === 'balances' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50' : 'text-gray-600'}`}>Opening Balances</button>
+              <button onClick={() => setActiveTab('exchange')} className={`px-6 py-4 font-medium whitespace-nowrap ${activeTab === 'exchange' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50' : 'text-gray-600'}`}>Exchange Rate</button>
+            </div>
+          </div>
+          <div className="p-6">
+            {activeTab === 'categories' && <ManageCategories />}
+            {activeTab === 'payment' && <ManagePaymentMethods />}
+            {activeTab === 'balances' && <ManageBalances />}
+            {activeTab === 'exchange' && <ExchangeRateSettings />}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100">
+      <header className="bg-white shadow-sm sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <Wallet className="w-8 h-8 text-blue-600" />
+            <h1 className="text-xl font-bold text-gray-800">Finance Tracker</h1>
+          </div>
+          <button onClick={() => setIsLoggedIn(false)} className="text-gray-600 hover:text-gray-800 flex items-center gap-2">
+            <LogOut className="w-5 h-5" /><span className="hidden sm:inline">Logout</span>
+          </button>
+        </div>
+        <div className="hidden md:block border-t border-gray-200">
+          <div className="max-w-7xl mx-auto px-4">
+            <div className="flex gap-1">
+              <button onClick={() => setCurrentPage('dashboard')} className={`px-6 py-3 font-medium ${currentPage === 'dashboard' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-600'}`}><div className="flex items-center gap-2"><Home className="w-5 h-5" />Dashboard</div></button>
+              <button onClick={() => setCurrentPage('transactions')} className={`px-6 py-3 font-medium ${currentPage === 'transactions' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-600'}`}><div className="flex items-center gap-2"><List className="w-5 h-5" />All Transactions</div></button>
+              <button onClick={() => { setEditingTransaction(null); setCurrentPage('add'); }} className={`px-6 py-3 font-medium ${currentPage === 'add' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-600'}`}><div className="flex items-center gap-2"><PlusCircle className="w-5 h-5" />Add</div></button>
+              <button onClick={() => setCurrentPage('budget')} className={`px-6 py-3 font-medium ${currentPage === 'budget' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-600'}`}><div className="flex items-center gap-2"><Target className="w-5 h-5" />Budget</div></button>
+              <button onClick={() => setCurrentPage('control')} className={`px-6 py-3 font-medium ${currentPage === 'control' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-600'}`}><div className="flex items-center gap-2"><Settings className="w-5 h-5" />Control Panel</div></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 py-6">
+        {currentPage === 'dashboard' && <Dashboard />}
+        {currentPage === 'add' && <AddTransaction />}
+        {currentPage === 'transactions' && <AllTransactions />}
+        {currentPage === 'budget' && <BudgetBuilder />}
+        {currentPage === 'control' && <ControlPanel />}
+      </main>
+
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 md:hidden">
+        <div className="grid grid-cols-5 gap-1">
+          <button onClick={() => setCurrentPage('dashboard')} className={`py-2 flex flex-col items-center gap-1 ${currentPage === 'dashboard' ? 'text-blue-600' : 'text-gray-600'}`}><Home className="w-5 h-5" /><span className="text-xs">Home</span></button>
+          <button onClick={() => setCurrentPage('transactions')} className={`py-2 flex flex-col items-center gap-1 ${currentPage === 'transactions' ? 'text-blue-600' : 'text-gray-600'}`}><List className="w-5 h-5" /><span className="text-xs">All</span></button>
+          <button onClick={() => { setEditingTransaction(null); setCurrentPage('add'); }} className={`py-2 flex flex-col items-center gap-1 ${currentPage === 'add' ? 'text-blue-600' : 'text-gray-600'}`}><PlusCircle className="w-5 h-5" /><span className="text-xs">Add</span></button>
+          <button onClick={() => setCurrentPage('budget')} className={`py-2 flex flex-col items-center gap-1 ${currentPage === 'budget' ? 'text-blue-600' : 'text-gray-600'}`}><Target className="w-5 h-5" /><span className="text-xs">Budget</span></button>
+          <button onClick={() => setCurrentPage('control')} className={`py-2 flex flex-col items-center gap-1 ${currentPage === 'control' ? 'text-blue-600' : 'text-gray-600'}`}><Settings className="w-5 h-5" /><span className="text-xs">Settings</span></button>
+        </div>
+      </nav>
+    </div>
+  );
+};
+
+export default FinanceTrackerApp;
+```
+
+5. **Click "Commit new file"**
+
+---
+
+## ✅ DONE! App.jsx is uploaded!
+
+This is the **COMPLETE APP** with all 5 features working!
+
+---
+
+**Your GitHub repo now has:**
+```
+finance-tracker-app/
+├── README.md ✅
+└── frontend/
+    ├── package.json ✅
+    ├── public/
+    │   └── index.html ✅
+    └── src/
+        ├── index.js ✅
+        ├── index.css ✅
+        └── App.jsx ✅ (THE BIG ONE!)
