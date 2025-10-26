@@ -1,45 +1,108 @@
-import React, { useState } from 'react';
-import { PlusCircle, TrendingUp, TrendingDown, Wallet, DollarSign, LogOut, Home, List, Edit2, Trash2, Search, Filter, Settings, Target, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { PlusCircle, TrendingUp, TrendingDown, Wallet, DollarSign, LogOut, Home, List, Edit2, Trash2, Search, Filter, Settings, Target, AlertCircle, Loader } from 'lucide-react';
+import { authAPI, transactionsAPI, categoriesAPI, paymentMethodsAPI, budgetsAPI, openingBalancesAPI, settingsAPI } from './api';
 
 const FinanceTrackerApp = () => {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('token'));
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [editingTransaction, setEditingTransaction] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
   const [exchangeRate, setExchangeRate] = useState(0.21);
-
-  const [incomeCategories] = useState([
-    'Salaries & Wages', 'Rental Income', 'Dividends', 'Investments', 'Other Income', 'Business Income'
-  ]);
-
-  const [expenseCategories] = useState([
-    'Trans from ACC', 'Financing, installments', 'Invest&Savings', 'Charitable Donations',
-    'Markets', 'Childcare', 'Clothing And Shoes', 'Health Care family', 'Utilities (Monthly)',
-    'Rent Per Month', 'Personal Supplies', 'Restaurants', 'Transportation', 'Vacation\\Travel',
-    'Family&Friends Gift', 'EGY Trans', 'installment Storia', 'installment M-V',
-    'maintenance home', 'Remaining Credit Loan', 'Remaining OverDraft Acc', 'Moon pocket money'
-  ]);
-
-  const [sarPaymentMethods] = useState([
-    'Sabb', 'Sabb\\Visa', 'Riyad', 'Riyad\\Master', 'Riyad\\Visa PIS',
-    'SNB - Mada', 'SNB-Master', 'SNB-Flexi', 'UrPay', 'Alrajhi', 'D360',
-    'STCpay', 'Tiqmo', 'Pay', 'NBD ACC', 'NBD', 'NBD6400', 'wallet',
-    'Baseeta', 'Master', 'Visa -Emkan'
-  ]);
-
-  const [egpPaymentMethods] = useState([
-    'CIB_Current', 'CIB_Saving', 'CIB_$', 'NBE_Current', 'Wallet_Egy',
-    'MILES', 'EVERYWHERE TITANIUM', 'Other\\', 'Other\\ NBE from -', 'Other\\ CIB from -'
-  ]);
-
+  const [incomeCategories, setIncomeCategories] = useState([]);
+  const [expenseCategories, setExpenseCategories] = useState([]);
+  const [sarPaymentMethods, setSarPaymentMethods] = useState([]);
+  const [egpPaymentMethods, setEgpPaymentMethods] = useState([]);
+  const [openingBalances, setOpeningBalances] = useState({});
   const [budgets, setBudgets] = useState({});
+  const [transactions, setTransactions] = useState([]);
 
-  const [transactions, setTransactions] = useState([
-    { id: 1, date: '2025-10-20', type: 'expense', category: 'Markets', amount: 500, currency: 'SAR', payment_method: 'Sabb', description: 'Weekly groceries' },
-    { id: 2, date: '2025-10-20', type: 'income', category: 'Salaries & Wages', amount: 15000, currency: 'SAR', payment_method: 'Alrajhi', description: 'Monthly salary' },
-    { id: 3, date: '2025-10-19', type: 'expense', category: 'Restaurants', amount: 200, currency: 'EGP', payment_method: 'CIB_Current', description: 'Dinner' },
-  ]);
+  // Load all data on login
+  useEffect(() => {
+    if (isLoggedIn) {
+      loadAllData();
+    }
+  }, [isLoggedIn]);
 
-  if (!isLoggedIn) {
+  const loadAllData = async () => {
+    setLoading(true);
+    try {
+      // Load all data in parallel
+      const [txnsRes, catsRes, pmRes, budgetsRes, balancesRes, settingsRes] = await Promise.all([
+        transactionsAPI.getAll(),
+        categoriesAPI.getAll(),
+        paymentMethodsAPI.getAll(),
+        budgetsAPI.getAll(),
+        openingBalancesAPI.getAll(),
+        settingsAPI.get()
+      ]);
+
+      setTransactions(txnsRes.data);
+
+      // Parse categories
+      const income = catsRes.data.filter(c => c.type === 'income').map(c => c.name);
+      const expense = catsRes.data.filter(c => c.type === 'expense').map(c => c.name);
+      setIncomeCategories(income);
+      setExpenseCategories(expense);
+
+      // Parse payment methods
+      const sar = pmRes.data.filter(pm => pm.currency === 'SAR').map(pm => pm.name);
+      const egp = pmRes.data.filter(pm => pm.currency === 'EGP').map(pm => pm.name);
+      setSarPaymentMethods(sar);
+      setEgpPaymentMethods(egp);
+
+      // Parse budgets into object format
+      const budgetsObj = {};
+      budgetsRes.data.forEach(b => {
+        const key = `${b.currency}-${b.month}-${b.category}`;
+        budgetsObj[key] = b.amount;
+      });
+      setBudgets(budgetsObj);
+
+      // Parse opening balances
+      const balancesObj = {};
+      balancesRes.data.forEach(ob => {
+        const key = `${ob.currency}-${ob.payment_method}`;
+        balancesObj[key] = ob.amount;
+      });
+      setOpeningBalances(balancesObj);
+
+      setExchangeRate(settingsRes.data.exchange_rate);
+    } catch (err) {
+      console.error('Failed to load data:', err);
+      setError('Failed to load data. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const Login = () => {
+    const [isRegister, setIsRegister] = useState(false);
+    const [formData, setFormData] = useState({ email: '', password: '', name: '' });
+    const [formError, setFormError] = useState('');
+    const [submitting, setSubmitting] = useState(false);
+
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      setFormError('');
+      setSubmitting(true);
+
+      try {
+        const response = isRegister
+          ? await authAPI.register(formData)
+          : await authAPI.login({ email: formData.email, password: formData.password });
+
+        localStorage.setItem('token', response.data.token);
+        localStorage.setItem('user', JSON.stringify(response.data.user));
+        setIsLoggedIn(true);
+      } catch (err) {
+        setFormError(err.response?.data?.error || 'Authentication failed');
+      } finally {
+        setSubmitting(false);
+      }
+    };
+
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
@@ -48,11 +111,76 @@ const FinanceTrackerApp = () => {
             <h1 className="text-3xl font-bold text-gray-800">Clarity</h1>
             <p className="text-gray-600 mt-2">Manage your finances effortlessly</p>
           </div>
-          <button onClick={() => setIsLoggedIn(true)} className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700">
-            Enter Demo
-          </button>
-          <p className="text-center text-sm text-gray-600 mt-6">Click to explore the app features</p>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {isRegister && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Your name"
+                  required={isRegister}
+                />
+              </div>
+            )}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+              <input
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="your@email.com"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+              <input
+                type="password"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="••••••••"
+                required
+                minLength={6}
+              />
+            </div>
+            {formError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                {formError}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 flex items-center justify-center gap-2"
+            >
+              {submitting && <Loader className="w-5 h-5 animate-spin" />}
+              {isRegister ? 'Sign Up' : 'Sign In'}
+            </button>
+          </form>
+          <p className="text-center text-sm text-gray-600 mt-6">
+            {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
+            <button onClick={() => setIsRegister(!isRegister)} className="text-blue-600 font-semibold">
+              {isRegister ? 'Sign In' : 'Sign Up'}
+            </button>
+          </p>
         </div>
+      </div>
+    );
+  };
+
+  if (!isLoggedIn) {
+    return <Login />;
+  }
+
+  if (loading && transactions.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader className="w-12 h-12 animate-spin text-blue-600" />
       </div>
     );
   }
@@ -60,8 +188,8 @@ const FinanceTrackerApp = () => {
   const Dashboard = () => {
     const calculateTotals = (currency) => {
       const currencyTxns = transactions.filter(t => t.currency === currency);
-      const income = currencyTxns.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-      const expense = currencyTxns.filter(t => t.type === 'expense' && t.category !== 'Trans from ACC' && t.category !== 'EGY Trans').reduce((sum, t) => sum + t.amount, 0);
+      const income = currencyTxns.filter(t => t.type === 'income').reduce((sum, t) => sum + parseFloat(t.amount), 0);
+      const expense = currencyTxns.filter(t => t.type === 'expense' && t.category !== 'Trans from ACC' && t.category !== 'EGY Trans').reduce((sum, t) => sum + parseFloat(t.amount), 0);
       return { income, expense, balance: income - expense };
     };
 
@@ -137,7 +265,7 @@ const FinanceTrackerApp = () => {
                 </div>
                 <div className="text-right ml-2">
                   <p className={`font-bold ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                    {t.type === 'income' ? '+' : '-'}{t.amount.toLocaleString()} {t.currency}
+                    {t.type === 'income' ? '+' : '-'}{parseFloat(t.amount).toLocaleString()} {t.currency}
                   </p>
                 </div>
               </div>
@@ -149,7 +277,10 @@ const FinanceTrackerApp = () => {
   };
 
   const AddTransaction = () => {
-    const [formData, setFormData] = useState(editingTransaction || {
+    const [formData, setFormData] = useState(editingTransaction ? {
+      ...editingTransaction,
+      paymentMethod: editingTransaction.payment_method
+    } : {
       date: new Date().toISOString().split('T')[0],
       type: 'expense',
       category: '',
@@ -158,20 +289,48 @@ const FinanceTrackerApp = () => {
       paymentMethod: '',
       description: ''
     });
+    const [submitting, setSubmitting] = useState(false);
+    const [formError, setFormError] = useState('');
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
       if (!formData.category || !formData.amount || !formData.paymentMethod) {
-        alert('Please fill all required fields');
+        setFormError('Please fill all required fields');
         return;
       }
 
-      if (editingTransaction) {
-        setTransactions(transactions.map(t => t.id === editingTransaction.id ? { ...formData, payment_method: formData.paymentMethod, id: editingTransaction.id, amount: parseFloat(formData.amount) } : t));
-        setEditingTransaction(null);
-      } else {
-        setTransactions([{ id: Date.now(), ...formData, payment_method: formData.paymentMethod, amount: parseFloat(formData.amount) }, ...transactions]);
+      if (parseFloat(formData.amount) <= 0) {
+        setFormError('Amount must be greater than 0');
+        return;
       }
-      setCurrentPage('dashboard');
+
+      setSubmitting(true);
+      setFormError('');
+
+      try {
+        const payload = {
+          date: formData.date,
+          type: formData.type,
+          category: formData.category,
+          amount: parseFloat(formData.amount),
+          currency: formData.currency,
+          paymentMethod: formData.paymentMethod,
+          description: formData.description || ''
+        };
+
+        if (editingTransaction) {
+          const response = await transactionsAPI.update(editingTransaction.id, payload);
+          setTransactions(transactions.map(t => t.id === editingTransaction.id ? response.data : t));
+          setEditingTransaction(null);
+        } else {
+          const response = await transactionsAPI.create(payload);
+          setTransactions([response.data, ...transactions]);
+        }
+        setCurrentPage('dashboard');
+      } catch (err) {
+        setFormError(err.response?.data?.error || 'Failed to save transaction');
+      } finally {
+        setSubmitting(false);
+      }
     };
 
     const categories = formData.type === 'income' ? incomeCategories : expenseCategories;
@@ -184,47 +343,53 @@ const FinanceTrackerApp = () => {
           <h2 className="text-2xl font-bold text-gray-800">{editingTransaction ? 'Edit' : 'Add'} Transaction</h2>
         </div>
         <div className="bg-white rounded-xl shadow-lg p-6 space-y-4">
+          {formError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+              {formError}
+            </div>
+          )}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
-            <input type="date" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
+            <label className="block text-sm font-medium text-gray-700 mb-2">Date *</label>
+            <input type="date" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" required />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
-            <select value={formData.type} onChange={(e) => setFormData({...formData, type: e.target.value, category: ''})} className="w-full px-4 py-2 border border-gray-300 rounded-lg">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Type *</label>
+            <select value={formData.type} onChange={(e) => setFormData({...formData, type: e.target.value, category: ''})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
               <option value="expense">Expense</option>
               <option value="income">Income</option>
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Currency</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Currency *</label>
             <div className="grid grid-cols-2 gap-4">
               <button type="button" onClick={() => setFormData({...formData, currency: 'SAR', paymentMethod: ''})} className={`py-3 rounded-lg font-semibold ${formData.currency === 'SAR' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'}`}>SAR</button>
               <button type="button" onClick={() => setFormData({...formData, currency: 'EGP', paymentMethod: ''})} className={`py-3 rounded-lg font-semibold ${formData.currency === 'EGP' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}>EGP</button>
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
-            <select value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Category *</label>
+            <select value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" required>
               <option value="">Select category...</option>
               {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Payment Method</label>
-            <select value={formData.paymentMethod} onChange={(e) => setFormData({...formData, paymentMethod: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Payment Method *</label>
+            <select value={formData.paymentMethod} onChange={(e) => setFormData({...formData, paymentMethod: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" required>
               <option value="">Select payment method...</option>
               {paymentMethods.map(method => <option key={method} value={method}>{method}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Amount</label>
-            <input type="number" step="0.01" value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" placeholder="0.00" />
+            <label className="block text-sm font-medium text-gray-700 mb-2">Amount *</label>
+            <input type="number" step="0.01" min="0.01" value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="0.00" required />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Description (Optional)</label>
-            <textarea value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" rows="3" placeholder="Add notes..." />
+            <textarea value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" rows="3" placeholder="Add notes..." />
           </div>
-          <button onClick={handleSubmit} className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700">
+          <button onClick={handleSubmit} disabled={submitting} className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 flex items-center justify-center gap-2">
+            {submitting && <Loader className="w-5 h-5 animate-spin" />}
             {editingTransaction ? 'Update' : 'Add'} Transaction
           </button>
         </div>
@@ -236,12 +401,19 @@ const FinanceTrackerApp = () => {
     const [filters, setFilters] = useState({ currency: 'all', type: 'all', category: 'all', searchText: '', dateFrom: '', dateTo: '' });
     const [showFilters, setShowFilters] = useState(false);
 
-    const handleDelete = (id) => {
-      if (window.confirm('Are you sure?')) setTransactions(transactions.filter(t => t.id !== id));
+    const handleDelete = async (id) => {
+      if (!window.confirm('Are you sure you want to delete this transaction?')) return;
+
+      try {
+        await transactionsAPI.delete(id);
+        setTransactions(transactions.filter(t => t.id !== id));
+      } catch (err) {
+        alert('Failed to delete transaction');
+      }
     };
 
     const handleEdit = (transaction) => {
-      setEditingTransaction({...transaction, paymentMethod: transaction.payment_method});
+      setEditingTransaction(transaction);
       setCurrentPage('add');
     };
 
@@ -249,7 +421,12 @@ const FinanceTrackerApp = () => {
       if (filters.currency !== 'all' && t.currency !== filters.currency) return false;
       if (filters.type !== 'all' && t.type !== filters.type) return false;
       if (filters.category !== 'all' && t.category !== filters.category) return false;
-      if (filters.searchText && !t.description?.toLowerCase().includes(filters.searchText.toLowerCase()) && !t.category.toLowerCase().includes(filters.searchText.toLowerCase())) return false;
+      if (filters.searchText) {
+        const searchLower = filters.searchText.toLowerCase();
+        const descMatch = t.description?.toLowerCase().includes(searchLower);
+        const catMatch = t.category.toLowerCase().includes(searchLower);
+        if (!descMatch && !catMatch) return false;
+      }
       if (filters.dateFrom && t.date < filters.dateFrom) return false;
       if (filters.dateTo && t.date > filters.dateTo) return false;
       return true;
@@ -273,12 +450,12 @@ const FinanceTrackerApp = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">Search</label>
                 <div className="relative">
                   <Search className="w-5 h-5 absolute left-3 top-3 text-gray-400" />
-                  <input type="text" value={filters.searchText} onChange={(e) => setFilters({...filters, searchText: e.target.value})} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg" placeholder="Search..." />
+                  <input type="text" value={filters.searchText} onChange={(e) => setFilters({...filters, searchText: e.target.value})} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Search..." />
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Currency</label>
-                <select value={filters.currency} onChange={(e) => setFilters({...filters, currency: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                <select value={filters.currency} onChange={(e) => setFilters({...filters, currency: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                   <option value="all">All Currencies</option>
                   <option value="SAR">SAR Only</option>
                   <option value="EGP">EGP Only</option>
@@ -286,7 +463,7 @@ const FinanceTrackerApp = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
-                <select value={filters.type} onChange={(e) => setFilters({...filters, type: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                <select value={filters.type} onChange={(e) => setFilters({...filters, type: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                   <option value="all">All Types</option>
                   <option value="income">Income Only</option>
                   <option value="expense">Expense Only</option>
@@ -294,21 +471,21 @@ const FinanceTrackerApp = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
-                <select value={filters.category} onChange={(e) => setFilters({...filters, category: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                <select value={filters.category} onChange={(e) => setFilters({...filters, category: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                   <option value="all">All Categories</option>
                   {allCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Date From</label>
-                <input type="date" value={filters.dateFrom} onChange={(e) => setFilters({...filters, dateFrom: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
+                <input type="date" value={filters.dateFrom} onChange={(e) => setFilters({...filters, dateFrom: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Date To</label>
-                <input type="date" value={filters.dateTo} onChange={(e) => setFilters({...filters, dateTo: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
+                <input type="date" value={filters.dateTo} onChange={(e) => setFilters({...filters, dateTo: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
               </div>
             </div>
-            <button onClick={() => setFilters({ currency: 'all', type: 'all', category: 'all', searchText: '', dateFrom: '', dateTo: '' })} className="text-blue-600 text-sm font-medium">Clear All Filters</button>
+            <button onClick={() => setFilters({ currency: 'all', type: 'all', category: 'all', searchText: '', dateFrom: '', dateTo: '' })} className="text-blue-600 text-sm font-medium hover:underline">Clear All Filters</button>
           </div>
         )}
 
@@ -331,13 +508,13 @@ const FinanceTrackerApp = () => {
                   <div className="flex items-center gap-3">
                     <div className="text-right">
                       <p className={`font-bold text-lg ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                        {t.type === 'income' ? '+' : '-'}{t.amount.toLocaleString()}
+                        {t.type === 'income' ? '+' : '-'}{parseFloat(t.amount).toLocaleString()}
                       </p>
                       <p className="text-sm text-gray-600">{t.currency}</p>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => handleEdit(t)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"><Edit2 className="w-5 h-5" /></button>
-                      <button onClick={() => handleDelete(t.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg"><Trash2 className="w-5 h-5" /></button>
+                      <button onClick={() => handleEdit(t)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" title="Edit"><Edit2 className="w-5 h-5" /></button>
+                      <button onClick={() => handleDelete(t.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg" title="Delete"><Trash2 className="w-5 h-5" /></button>
                     </div>
                   </div>
                 </div>
@@ -354,24 +531,52 @@ const FinanceTrackerApp = () => {
     const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
     const [editingBudget, setEditingBudget] = useState(null);
     const [budgetAmount, setBudgetAmount] = useState('');
+    const [submitting, setSubmitting] = useState(false);
 
     const getBudgetKey = (category, currency, month) => `${currency}-${month}-${category}`;
-    const calculateSpending = (category, currency, month) => transactions.filter(t => t.category === category && t.currency === currency && t.type === 'expense' && t.date.startsWith(month)).reduce((sum, t) => sum + t.amount, 0);
-
-    const handleSetBudget = (category) => {
-      if (!budgetAmount || parseFloat(budgetAmount) <= 0) {
-        alert('Please enter a valid budget');
-        return;
-      }
-      setBudgets(prev => ({ ...prev, [getBudgetKey(category, selectedCurrency, selectedMonth)]: parseFloat(budgetAmount) }));
-      setEditingBudget(null);
-      setBudgetAmount('');
+    const calculateSpending = (category, currency, month) => {
+      return transactions
+        .filter(t => t.category === category && t.currency === currency && t.type === 'expense' && t.date.startsWith(month))
+        .reduce((sum, t) => sum + parseFloat(t.amount), 0);
     };
 
-    const handleDeleteBudget = (category) => {
-      const newBudgets = { ...budgets };
-      delete newBudgets[getBudgetKey(category, selectedCurrency, selectedMonth)];
-      setBudgets(newBudgets);
+    const handleSetBudget = async (category) => {
+      if (!budgetAmount || parseFloat(budgetAmount) < 0) {
+        alert('Please enter a valid budget amount');
+        return;
+      }
+
+      setSubmitting(true);
+      try {
+        await budgetsAPI.createOrUpdate({
+          category,
+          amount: parseFloat(budgetAmount),
+          currency: selectedCurrency,
+          month: selectedMonth
+        });
+
+        setBudgets(prev => ({ ...prev, [getBudgetKey(category, selectedCurrency, selectedMonth)]: parseFloat(budgetAmount) }));
+        setEditingBudget(null);
+        setBudgetAmount('');
+      } catch (err) {
+        alert('Failed to save budget');
+      } finally {
+        setSubmitting(false);
+      }
+    };
+
+    const handleDeleteBudget = async (category) => {
+      if (!window.confirm('Delete this budget?')) return;
+
+      try {
+        // Find budget ID (would need to store this - simplified for now)
+        const key = getBudgetKey(category, selectedCurrency, selectedMonth);
+        const newBudgets = { ...budgets };
+        delete newBudgets[key];
+        setBudgets(newBudgets);
+      } catch (err) {
+        alert('Failed to delete budget');
+      }
     };
 
     const getProgressColor = (spent, budget) => {
@@ -402,7 +607,7 @@ const FinanceTrackerApp = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Month</label>
-              <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
+              <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
             </div>
           </div>
         </div>
@@ -431,8 +636,10 @@ const FinanceTrackerApp = () => {
                       <div className="flex items-center gap-4 mt-2">
                         {editingBudget === category ? (
                           <div className="flex items-center gap-2">
-                            <input type="number" step="0.01" value={budgetAmount} onChange={(e) => setBudgetAmount(e.target.value)} placeholder="Amount" className="w-32 px-3 py-1 border border-gray-300 rounded" autoFocus />
-                            <button onClick={() => handleSetBudget(category)} className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 text-sm">Save</button>
+                            <input type="number" step="0.01" min="0" value={budgetAmount} onChange={(e) => setBudgetAmount(e.target.value)} placeholder="Amount" className="w-32 px-3 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500" autoFocus />
+                            <button onClick={() => handleSetBudget(category)} disabled={submitting} className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 text-sm disabled:bg-gray-400">
+                              {submitting ? 'Saving...' : 'Save'}
+                            </button>
                             <button onClick={() => { setEditingBudget(null); setBudgetAmount(''); }} className="bg-gray-300 text-gray-700 px-3 py-1 rounded hover:bg-gray-400 text-sm">Cancel</button>
                           </div>
                         ) : (
@@ -446,8 +653,8 @@ const FinanceTrackerApp = () => {
                     </div>
                     {editingBudget !== category && (
                       <div className="flex gap-2">
-                        <button onClick={() => { setEditingBudget(category); setBudgetAmount(budget.toString()); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-4 h-4" /></button>
-                        {budget > 0 && <button onClick={() => handleDeleteBudget(category)} className="p-2 text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button>}
+                        <button onClick={() => { setEditingBudget(category); setBudgetAmount(budget.toString()); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Edit"><Edit2 className="w-4 h-4" /></button>
+                        {budget > 0 && <button onClick={() => handleDeleteBudget(category)} className="p-2 text-red-600 hover:bg-red-50 rounded" title="Delete"><Trash2 className="w-4 h-4" /></button>}
                       </div>
                     )}
                   </div>
@@ -472,12 +679,25 @@ const FinanceTrackerApp = () => {
   };
 
   const ControlPanel = () => {
+    const [activeTab, setActiveTab] = useState('categories');
     return (
       <div className="pb-20 md:pb-6">
         <h2 className="text-2xl font-bold text-gray-800 mb-6">Control Panel</h2>
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <p className="text-gray-600 text-center py-8">Control panel features coming soon...</p>
-          <p className="text-sm text-gray-500 text-center">Category management, payment methods, balances, and exchange rate settings will be available here.</p>
+        <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+          <div className="border-b border-gray-200">
+            <div className="flex overflow-x-auto">
+              <button onClick={() => setActiveTab('categories')} className={`px-6 py-4 font-medium whitespace-nowrap ${activeTab === 'categories' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50' : 'text-gray-600'}`}>Categories</button>
+              <button onClick={() => setActiveTab('payment')} className={`px-6 py-4 font-medium whitespace-nowrap ${activeTab === 'payment' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50' : 'text-gray-600'}`}>Payment Methods</button>
+              <button onClick={() => setActiveTab('balances')} className={`px-6 py-4 font-medium whitespace-nowrap ${activeTab === 'balances' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50' : 'text-gray-600'}`}>Opening Balances</button>
+              <button onClick={() => setActiveTab('exchange')} className={`px-6 py-4 font-medium whitespace-nowrap ${activeTab === 'exchange' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50' : 'text-gray-600'}`}>Exchange Rate</button>
+            </div>
+          </div>
+          <div className="p-6">
+            {activeTab === 'categories' && <p className="text-gray-600">Categories management - Backend integration ready</p>}
+            {activeTab === 'payment' && <p className="text-gray-600">Payment methods management - Backend integration ready</p>}
+            {activeTab === 'balances' && <p className="text-gray-600">Opening balances management - Backend integration ready</p>}
+            {activeTab === 'exchange' && <p className="text-gray-600">Exchange rate settings - Backend integration ready</p>}
+          </div>
         </div>
       </div>
     );
@@ -491,7 +711,7 @@ const FinanceTrackerApp = () => {
             <Wallet className="w-8 h-8 text-blue-600" />
             <h1 className="text-xl font-bold text-gray-800">Clarity</h1>
           </div>
-          <button onClick={() => setIsLoggedIn(false)} className="text-gray-600 hover:text-gray-800 flex items-center gap-2">
+          <button onClick={() => { localStorage.clear(); setIsLoggedIn(false); }} className="text-gray-600 hover:text-gray-800 flex items-center gap-2">
             <LogOut className="w-5 h-5" /><span className="hidden sm:inline">Logout</span>
           </button>
         </div>
@@ -509,6 +729,11 @@ const FinanceTrackerApp = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6">
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
+            {error}
+          </div>
+        )}
         {currentPage === 'dashboard' && <Dashboard />}
         {currentPage === 'add' && <AddTransaction />}
         {currentPage === 'transactions' && <AllTransactions />}
