@@ -10,9 +10,11 @@ node_modules/
 .env.test.local
 .env.production.local
 
-# Build output
+# Build output (Render builds these automatically)
 build/
 dist/
+*.db
+*.db-journal
 
 # Logs
 npm-debug.log*
